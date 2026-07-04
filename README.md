@@ -21,6 +21,8 @@ pip install -r requirements.txt
 pre-commit install
 ```
 
+> **Tip:** Every step below is also available as a Make target — run `make help` to list them (e.g. `make train`, `make serve`, `make test`, or `make pipeline` for the full EDA → feature selection → training run).
+
 ### 3. Train the Models
 Run the training pipeline. This script will load the data, train multiple models, track their performance using MLflow, and automatically register the best model to the local MLflow Model Registry.
 
