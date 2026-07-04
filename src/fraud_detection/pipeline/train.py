@@ -10,7 +10,11 @@ if src_path not in sys.path:
 from fraud_detection.data.load import load_data
 from fraud_detection.model.models import get_models
 from fraud_detection.pipeline.preprocess import build_preprocessor
-from fraud_detection.data.features import TARGET_COLUMN, _to_binary_target
+from fraud_detection.data.features import (
+    TARGET_COLUMN,
+    _to_binary_target,
+    selected_feature_frame,
+)
 
 import mlflow
 import mlflow.sklearn
@@ -28,6 +32,11 @@ from sklearn.pipeline import Pipeline
 def main():
     print("Loading data...")
     df = load_data()
+
+    print("Selecting features...")
+    df = selected_feature_frame(df)
+    selected = [column for column in df.columns if column != TARGET_COLUMN]
+    print(f"Selected {len(selected)} features: {', '.join(selected)}")
 
     print("Building preprocessor...")
     preprocessor, feature_names = build_preprocessor(df, TARGET_COLUMN)

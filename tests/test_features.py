@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from fraud_detection.data.features import score_features
+from fraud_detection.data.features import score_features, selected_feature_frame
 
 
 @pytest.fixture
@@ -49,6 +49,20 @@ def test_categorical_features_scored_with_permutation_importance(synthetic_claim
         categorical.loc["incident_severity", "score"]
         > categorical.loc["auto_make", "score"]
     )
+
+
+def test_selected_feature_frame_keeps_only_selected_columns_and_target(
+    synthetic_claims,
+):
+    frame = selected_feature_frame(synthetic_claims)
+
+    assert frame.columns[-1] == "fraud_reported"
+    selected = list(frame.columns[:-1])
+    assert selected
+    assert set(selected) <= set(synthetic_claims.columns) - {"fraud_reported"}
+    # The perfect predictors must survive selection; row order is preserved.
+    assert {"months_as_customer", "incident_severity"} <= set(selected)
+    assert len(frame) == len(synthetic_claims)
 
 
 def test_scoring_is_deterministic(synthetic_claims):

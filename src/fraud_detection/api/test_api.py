@@ -1,7 +1,9 @@
-import requests
 import json
+import os
 
-API_URL = "http://127.0.0.1:8000/predict"
+import requests
+
+API_URL = os.environ.get("API_URL", "http://127.0.0.1:8000/predict")
 
 
 def test_prediction():
