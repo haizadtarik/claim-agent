@@ -7,6 +7,9 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.inspection import permutation_importance
+from sklearn.model_selection import train_test_split
 
 from fraud_detection.data.load import load_data
 
@@ -90,7 +93,7 @@ def _candidate_features(df: pd.DataFrame, target_column: str) -> list[str]:
     return candidates
 
 
-def _point_biserial_score(series: pd.Series, target: pd.Series) -> float:
+def _pearson_score(series: pd.Series, target: pd.Series) -> float:
     numeric = pd.to_numeric(series, errors="coerce")
     valid = numeric.notna() & target.notna()
     if valid.sum() < 3:
@@ -103,34 +106,37 @@ def _point_biserial_score(series: pd.Series, target: pd.Series) -> float:
     return 0.0 if pd.isna(score) else abs(float(score))
 
 
-def _cramers_v_score(series: pd.Series, target: pd.Series) -> float:
-    working = pd.DataFrame(
-        {
-            "feature": series.fillna(MISSING_TOKEN).astype(str),
-            "target": target.fillna(-1),
-        }
+def _tree_importance_scores(
+    features: pd.DataFrame, target: pd.Series
+) -> dict[str, float]:
+    # One forest is fit on all categorical features jointly, then scored with
+    # permutation importance on a held-out split: impurity-based importance
+    # would inflate high-cardinality and noise features seen during training.
+    if target.nunique() < 2:
+        return {column: 0.0 for column in features.columns}
+    encoded = pd.DataFrame(index=features.index)
+    for column in features.columns:
+        encoded[column] = pd.factorize(
+            features[column].fillna(MISSING_TOKEN).astype(str)
+        )[0]
+    train_features, valid_features, train_target, valid_target = train_test_split(
+        encoded, target, test_size=0.25, stratify=target, random_state=42
     )
-    table = pd.crosstab(working["feature"], working["target"])
-    if table.empty or min(table.shape) < 2:
-        return 0.0
-
-    observed = table.to_numpy(dtype=float)
-    total = observed.sum()
-    if total == 0:
-        return 0.0
-
-    row_sums = observed.sum(axis=1, keepdims=True)
-    col_sums = observed.sum(axis=0, keepdims=True)
-    expected = row_sums @ col_sums / total
-    with np.errstate(divide="ignore", invalid="ignore"):
-        chi2 = np.where(expected > 0, (observed - expected) ** 2 / expected, 0.0).sum()
-
-    phi2 = chi2 / total
-    rows, cols = table.shape
-    denom = min(rows - 1, cols - 1)
-    if denom <= 0:
-        return 0.0
-    return float(np.sqrt(phi2 / denom))
+    model = RandomForestClassifier(n_estimators=200, random_state=42, n_jobs=-1)
+    model.fit(train_features, train_target)
+    result = permutation_importance(
+        model,
+        valid_features,
+        valid_target,
+        scoring="roc_auc",
+        n_repeats=10,
+        random_state=42,
+        n_jobs=-1,
+    )
+    return {
+        column: max(float(importance), 0.0)
+        for column, importance in zip(features.columns, result.importances_mean)
+    }
 
 
 def score_features(
@@ -143,37 +149,51 @@ def score_features(
         )
 
     target = _to_binary_target(cleaned[target_column])
-    rows: list[dict[str, object]] = []
+    numeric_scores: dict[str, float] = {}
+    categorical_columns: list[str] = []
+    feature_types: dict[str, str] = {}
+    candidates = _candidate_features(cleaned, target_column)
 
-    for column in _candidate_features(cleaned, target_column):
+    for column in candidates:
         series = cleaned[column]
-        non_null_count = int(series.notna().sum())
-        missing_rate = float(series.isna().mean())
-        cardinality = int(series.nunique(dropna=True))
-
         if pd.api.types.is_numeric_dtype(series):
-            feature_type = "numeric"
-            score = _point_biserial_score(series, target)
+            feature_types[column] = "numeric"
+            numeric_scores[column] = _pearson_score(series, target)
         else:
             numeric_attempt = pd.to_numeric(series, errors="coerce")
             numeric_coverage = (
                 float(numeric_attempt.notna().mean()) if len(series) else 0.0
             )
             if numeric_coverage >= 0.8:
-                feature_type = "numeric"
-                score = _point_biserial_score(numeric_attempt, target)
+                feature_types[column] = "numeric"
+                numeric_scores[column] = _pearson_score(numeric_attempt, target)
             else:
-                feature_type = "categorical"
-                score = _cramers_v_score(series, target)
+                feature_types[column] = "categorical"
+                categorical_columns.append(column)
 
+    categorical_scores = (
+        _tree_importance_scores(cleaned[categorical_columns], target)
+        if categorical_columns
+        else {}
+    )
+
+    rows: list[dict[str, object]] = []
+    for column in candidates:
+        series = cleaned[column]
+        feature_type = feature_types[column]
         rows.append(
             {
                 "feature": column,
                 "type": feature_type,
-                "score": score,
-                "missing_rate": missing_rate,
-                "cardinality": cardinality,
-                "non_null_count": non_null_count,
+                "method": "pearson"
+                if feature_type == "numeric"
+                else "permutation_importance",
+                "score": numeric_scores.get(
+                    column, categorical_scores.get(column, 0.0)
+                ),
+                "missing_rate": float(series.isna().mean()),
+                "cardinality": int(series.nunique(dropna=True)),
+                "non_null_count": int(series.notna().sum()),
             }
         )
 
@@ -183,6 +203,7 @@ def score_features(
             columns=[
                 "feature",
                 "type",
+                "method",
                 "score",
                 "missing_rate",
                 "cardinality",
