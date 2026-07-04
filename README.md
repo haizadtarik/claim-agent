@@ -32,7 +32,7 @@ python src/fraud_detection/pipeline/train.py
 
 *To view the MLflow UI and compare model runs, execute `mlflow ui` in your terminal and visit `http://127.0.0.1:5000`.*
 
-### 4. Serve the API
+### 4. Serve as REST API
 Start the FastAPI server. On startup, the application dynamically loads the best registered model from MLflow.
 
 ```bash
@@ -52,3 +52,30 @@ Alternatively, you can run the full Pytest testing suite:
 ```bash
 pytest tests/
 ```
+
+### 6. Serve as MCP Server
+The fraud detector is also available as a [Model Context Protocol](https://modelcontextprotocol.io) server, so AI assistants such as Claude can call it directly as a tool:
+
+```bash
+make mcp-serve  # or: python src/fraud_detection/mcp/server.py
+```
+
+The server communicates over stdio and exposes two tools:
+
+- `predict_fraud(claims)` — score one or more claim records; returns `fraud_prediction` (1 = fraud) and `fraud_probability` per claim. Missing fields are imputed and unknown fields are ignored.
+- `model_info()` — name, latest registered version, and evaluation metrics of the model being served.
+
+To register it with an MCP client (e.g. Claude Code or Claude Desktop), use a config like:
+
+```json
+{
+  "mcpServers": {
+    "fraud-detection": {
+      "command": "python",
+      "args": ["/absolute/path/to/claim-agent/src/fraud_detection/mcp/server.py"]
+    }
+  }
+}
+```
+
+The server loads `models:/FraudDetectionModel/latest` from the local MLflow registry (`sqlite:///mlflow.db` in the repo root by default; override with the `MLFLOW_TRACKING_URI` environment variable), so train and register a model first.
