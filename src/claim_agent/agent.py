@@ -2,6 +2,7 @@
 import re
 import sys
 from pathlib import Path
+from typing import Literal
 
 # Add src to sys.path
 src_path = str(Path(__file__).resolve().parents[1])
@@ -27,13 +28,21 @@ Your job, in order:
    (age, months as a customer, annual premium, hobbies). Ask at most two
    short clarifying questions per turn.
 2. Once you have at least the incident description and the claim amount, call
-   the assess_claim tool with every detail the user provided. Never fill in
-   details the user did not give you. Call it again only if the user corrects
-   or adds details afterwards. If the claimant asks you to assess the claim
-   with the details already given, call the tool immediately instead of
-   asking more questions. Pass hours as an integer 0-23, amounts as plain
-   numbers, and authorities_contacted as one of "Police", "Fire",
-   "Ambulance", "Other", "None".
+   the assess_claim tool with every detail the user provided — never drop a
+   detail the claimant gave you, and never fill in details they did not give
+   you. Call it again only if the user corrects or adds details afterwards.
+   If the claimant asks you to assess the claim with the details already
+   given, call the tool immediately instead of asking more questions. Pass
+   hours as an integer 0-23 and amounts as plain numbers. For categorical
+   fields, pick the closest allowed value to what the claimant described:
+   incident_type is one of "Single Vehicle Collision" (e.g. hitting a
+   barrier or tree alone), "Multi-vehicle Collision", "Vehicle Theft",
+   "Parked Car"; incident_severity is one of "Trivial Damage",
+   "Minor Damage", "Major Damage", "Total Loss"; authorities_contacted is
+   one of "Police", "Fire", "Ambulance", "Other", "None". The tool reply
+   lists fields_missing — if it contains details the claimant already gave
+   you, call the tool again with those included before relaying the
+   decision.
 3. The tool's decision is final. If it returns "approved", tell the user
    their claim is approved. If it returns "disapproved", tell the user their
    claim is disapproved because it was flagged as likely fraudulent. Never
@@ -69,6 +78,40 @@ _FLOAT_FIELDS = frozenset(
     }
 )
 
+# Categorical vocabularies the model was trained on; out-of-vocabulary values
+# would silently be treated as missing and erase the fraud signal.
+IncidentType = Literal[
+    "Single Vehicle Collision",
+    "Multi-vehicle Collision",
+    "Vehicle Theft",
+    "Parked Car",
+]
+IncidentSeverity = Literal[
+    "Trivial Damage",
+    "Minor Damage",
+    "Major Damage",
+    "Total Loss",
+]
+AuthoritiesContacted = Literal["Police", "Fire", "Ambulance", "Other", "None"]
+
+_CLAIM_FIELDS = (
+    "months_as_customer",
+    "age",
+    "policy_annual_premium",
+    "incident_type",
+    "incident_severity",
+    "authorities_contacted",
+    "incident_hour_of_the_day",
+    "number_of_vehicles_involved",
+    "bodily_injuries",
+    "witnesses",
+    "injury_claim",
+    "property_claim",
+    "vehicle_claim",
+    "total_claim_amount",
+    "insured_hobbies",
+)
+
 
 def _coerce(field: str, value):
     """Coerce loosely typed LLM tool arguments; return None when unusable."""
@@ -82,6 +125,13 @@ def _coerce(field: str, value):
             return float(value)
         match = re.search(r"-?\d+(?:\.\d+)?", str(value).replace(",", ""))
         return float(match.group()) if match else None
+    if field == "authorities_contacted" and value == "None":
+        # The training data has no "None" category; nobody-contacted is a
+        # missing value there, so drop it rather than send an unseen label.
+        return None
+    if field == "insured_hobbies" and isinstance(value, str):
+        # Training hobbies are all lowercase; "Chess" would read as unknown.
+        return value.strip().lower()
     return value if isinstance(value, str) else None
 
 
@@ -90,9 +140,9 @@ def assess_claim(
     months_as_customer: int | str | None = None,
     age: int | str | None = None,
     policy_annual_premium: float | str | None = None,
-    incident_type: str | None = None,
-    incident_severity: str | None = None,
-    authorities_contacted: str | bool | None = None,
+    incident_type: IncidentType | None = None,
+    incident_severity: IncidentSeverity | None = None,
+    authorities_contacted: AuthoritiesContacted | bool | None = None,
     incident_hour_of_the_day: int | str | None = None,
     number_of_vehicles_involved: int | str | None = None,
     bodily_injuries: int | str | None = None,
@@ -106,11 +156,15 @@ def assess_claim(
     """Run the fraud model on a claim and return the final approval decision.
 
     Pass every claim detail the claimant provided and leave unknown fields
-    unset. Hours are integers 0-23, claim amounts are numbers in dollars, and
-    authorities_contacted is one of "Police", "Fire", "Ambulance", "Other",
-    "None". Returns the decision ("approved" or "disapproved"), the fraud
-    prediction (1 = fraud, 0 = not fraud) and the fraud probability. The
-    decision is final and must be relayed to the claimant as-is.
+    unset. Hours are integers 0-23 and claim amounts are numbers in dollars.
+    Categorical fields only accept their listed values, so map the claimant's
+    description to the closest one (a car hitting a barrier alone is a
+    "Single Vehicle Collision"; major damage is "Major Damage"). Returns the
+    decision ("approved" or "disapproved"), the fraud prediction (1 = fraud,
+    0 = not fraud), the fraud probability, plus fields_used and
+    fields_missing — if fields_missing names details the claimant already
+    provided, call the tool again with them included. The decision is final
+    and must be relayed to the claimant as-is.
     """
     provided = {key: value for key, value in locals().items() if value is not None}
     claim = {
@@ -129,6 +183,8 @@ def assess_claim(
         "decision": decide(prediction["fraud_prediction"]),
         "fraud_prediction": prediction["fraud_prediction"],
         "fraud_probability": prediction["fraud_probability"],
+        "fields_used": sorted(claim),
+        "fields_missing": sorted(set(_CLAIM_FIELDS) - set(claim)),
     }
 
 

@@ -1,5 +1,7 @@
+import json
 from unittest.mock import patch
 
+import pytest
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage
 
@@ -31,7 +33,11 @@ def test_assess_claim_approves_legitimate_claim():
 
     with patch.object(agent, "predict_fraud", return_value=_not_fraud_response()):
         result = agent.assess_claim.invoke(
-            {"age": 35, "incident_type": "Collision", "total_claim_amount": 5000}
+            {
+                "age": 35,
+                "incident_type": "Multi-vehicle Collision",
+                "total_claim_amount": 5000,
+            }
         )
 
     assert result["decision"] == "approved"
@@ -133,6 +139,73 @@ def test_assess_claim_is_a_langchain_tool():
     schema = assess_claim.args
     for field in ("incident_type", "incident_severity", "total_claim_amount"):
         assert field in schema
+
+
+def test_assess_claim_schema_enumerates_categorical_vocabulary():
+    from claim_agent.agent import assess_claim
+
+    schema = json.dumps(assess_claim.args)
+    for value in (
+        "Single Vehicle Collision",
+        "Multi-vehicle Collision",
+        "Vehicle Theft",
+        "Parked Car",
+        "Major Damage",
+        "Trivial Damage",
+        "Ambulance",
+    ):
+        assert value in schema
+
+
+def test_assess_claim_rejects_out_of_vocabulary_categories():
+    from claim_agent import agent
+
+    with patch.object(agent, "predict_fraud") as mock_predict:
+        with pytest.raises(Exception) as excinfo:
+            agent.assess_claim.invoke(
+                {
+                    "incident_type": "Hitting a road barrier",
+                    "incident_severity": "Major",
+                    "total_claim_amount": 71000,
+                }
+            )
+
+    mock_predict.assert_not_called()
+    # The error must name the allowed values so the LLM can self-correct.
+    assert "Single Vehicle Collision" in str(excinfo.value)
+
+
+def test_assess_claim_reports_fields_used_and_missing():
+    from claim_agent import agent
+
+    with patch.object(agent, "predict_fraud", return_value=_not_fraud_response()):
+        result = agent.assess_claim.invoke({"age": 35, "total_claim_amount": 5000})
+
+    assert result["fields_used"] == ["age", "total_claim_amount"]
+    for field in ("incident_type", "insured_hobbies", "months_as_customer"):
+        assert field in result["fields_missing"]
+
+
+def test_assess_claim_lowercases_hobbies_to_match_training_vocabulary():
+    from claim_agent import agent
+
+    with patch.object(
+        agent, "predict_fraud", return_value=_fraud_response()
+    ) as mock_predict:
+        agent.assess_claim.invoke({"age": 37, "insured_hobbies": "Chess"})
+
+    assert mock_predict.call_args[0][0] == [{"age": 37, "insured_hobbies": "chess"}]
+
+
+def test_assess_claim_drops_authorities_none_instead_of_scoring_it():
+    from claim_agent import agent
+
+    with patch.object(
+        agent, "predict_fraud", return_value=_not_fraud_response()
+    ) as mock_predict:
+        agent.assess_claim.invoke({"age": 35, "authorities_contacted": "None"})
+
+    assert mock_predict.call_args[0][0] == [{"age": 35}]
 
 
 def test_build_agent_binds_tool_and_responds():
