@@ -129,3 +129,5 @@ make ui  # or: PYTHONPATH=src streamlit run src/claim_agent/ui.py
 ```
 
 This opens a chat page at `http://localhost:8501` with the conversation history, a spinner while the agent thinks, and a **New conversation** button in the sidebar to start over. It has the same prerequisites as the terminal chat (registered model + Ollama serving `gemma4`).
+
+The official decision is shown in a banner above the chat that is rendered directly from the fraud model's tool result — the LLM's prose can never produce or override it. Until an assessment has actually run, the page explicitly says no decision is official yet.
