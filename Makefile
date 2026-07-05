@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 PYTHON ?= python
 
-.PHONY: help install eda features train pipeline serve smoke-test mlflow-ui test lint format clean
+.PHONY: help install eda features train serve mcp-serve agent ui smoke-test mlflow-ui test lint format
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -21,6 +21,15 @@ train: ## Tune models with Optuna (override trials: N_TRIALS=5 make train), trac
 
 serve: ## Serve the best registered model with FastAPI on port 8080
 	uvicorn src.fraud_detection.api.app:app --reload --port 8080
+
+mcp-serve: ## Serve the best registered model as an MCP server over stdio
+	$(PYTHON) src/fraud_detection/mcp/server.py
+
+agent: ## Chat with the claim approval agent (needs Ollama serving gemma4)
+	PYTHONPATH=src $(PYTHON) -m claim_agent.agent
+
+ui: ## Chat with the claim approval agent in the browser via Streamlit
+	PYTHONPATH=src streamlit run src/claim_agent/ui.py
 
 smoke-test: ## Hit the running API with sample requests (needs `make serve`)
 	API_URL=http://127.0.0.1:8080/predict $(PYTHON) src/fraud_detection/api/test_api.py
