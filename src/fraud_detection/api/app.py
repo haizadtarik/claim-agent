@@ -66,6 +66,12 @@ def predict(request: PredictRequest):
         # Convert to Pandas DataFrame
         df = pd.DataFrame(records)
 
+        # Align with the training columns: the pipeline imputes NaNs but
+        # errors on absent columns.
+        expected = getattr(model_pipeline, "feature_names_in_", None)
+        if expected is not None:
+            df = df.reindex(columns=list(expected))
+
         # Run prediction
         predictions = model_pipeline.predict(df)
 

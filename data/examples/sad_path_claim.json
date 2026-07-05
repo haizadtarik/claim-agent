@@ -1,0 +1,21 @@
+{
+  "claims": [
+    {
+      "months_as_customer": 231,
+      "age": 37,
+      "policy_annual_premium": 920.81,
+      "incident_type": "Single Vehicle Collision",
+      "incident_severity": "Major Damage",
+      "authorities_contacted": "Fire",
+      "incident_hour_of_the_day": 14,
+      "number_of_vehicles_involved": 1,
+      "bodily_injuries": 2,
+      "witnesses": 0,
+      "injury_claim": 0,
+      "property_claim": 7910,
+      "vehicle_claim": 63280,
+      "total_claim_amount": 71190,
+      "insured_hobbies": "chess"
+    }
+  ]
+}

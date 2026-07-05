@@ -53,6 +53,29 @@ Alternatively, you can run the full Pytest testing suite:
 pytest tests/
 ```
 
+#### Happy & sad path examples
+
+Two ready-made payloads in [`data/examples/`](data/examples/) exercise both decision paths. Each is a real record from `data/insurance_claims.csv` that the registered model classifies confidently, so they double as a sanity check that the served model behaves as expected. With the API running (step 4):
+
+```bash
+# Happy path — legitimate claim, expect fraud_prediction 0 (claim approved)
+curl -X POST http://127.0.0.1:8080/predict \
+  -H "Content-Type: application/json" \
+  -d @data/examples/happy_path_claim.json
+
+# Sad path — fraudulent claim, expect fraud_prediction 1 (claim disapproved)
+curl -X POST http://127.0.0.1:8080/predict \
+  -H "Content-Type: application/json" \
+  -d @data/examples/sad_path_claim.json
+```
+
+Expected responses (probabilities vary with the trained model version):
+
+```json
+{"predictions": [{"fraud_prediction": 0, "fraud_probability": 0.019}]}
+{"predictions": [{"fraud_prediction": 1, "fraud_probability": 0.999}]}
+```
+
 ### 6. Serve as MCP Server
 The fraud detector is also available as a [Model Context Protocol](https://modelcontextprotocol.io) server, so AI assistants such as Claude can call it directly as a tool:
 

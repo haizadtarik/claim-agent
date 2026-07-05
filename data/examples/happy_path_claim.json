@@ -1,0 +1,21 @@
+{
+  "claims": [
+    {
+      "months_as_customer": 32,
+      "age": 38,
+      "policy_annual_premium": 1006.77,
+      "incident_type": "Multi-vehicle Collision",
+      "incident_severity": "Minor Damage",
+      "authorities_contacted": "Police",
+      "incident_hour_of_the_day": 15,
+      "number_of_vehicles_involved": 3,
+      "bodily_injuries": 2,
+      "witnesses": 1,
+      "injury_claim": 14180,
+      "property_claim": 7090,
+      "vehicle_claim": 49630,
+      "total_claim_amount": 70900,
+      "insured_hobbies": "sleeping"
+    }
+  ]
+}
