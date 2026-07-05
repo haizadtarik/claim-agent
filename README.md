@@ -79,3 +79,22 @@ To register it with an MCP client (e.g. Claude Code or Claude Desktop), use a co
 ```
 
 The server loads `models:/FraudDetectionModel/latest` from the local MLflow registry (`sqlite:///mlflow.db` in the repo root by default; override with the `MLFLOW_TRACKING_URI` environment variable), so train and register a model first.
+
+### 7. Chat with the Claim Agent
+A conversational agent built on [LangChain](https://python.langchain.com) and a local [Ollama](https://ollama.com) `gemma4` model handles claim approvals end to end: it interviews the claimant about their vehicle insurance claim, scores the claim with the registered fraud detection model, then **approves** the claim when it is predicted legitimate or **disapproves** it when it is flagged as fraud. The approval decision is made deterministically from the model prediction — the LLM only gathers details and relays the outcome.
+
+Prerequisites: a trained model in the registry (step 3) and Ollama running with the model pulled (`ollama pull gemma4`). Then start the chat:
+
+```bash
+make agent  # or: PYTHONPATH=src python -m claim_agent.agent
+```
+
+Example session:
+
+```
+You: Hi, I'd like to file a claim for a minor collision, about $5,000 total.
+Agent: ... (asks follow-up questions, then runs the fraud check)
+Agent: Good news — your claim has been approved. ...
+```
+
+Type `quit` to end the session.
