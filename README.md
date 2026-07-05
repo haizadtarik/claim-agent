@@ -98,3 +98,11 @@ Agent: Good news — your claim has been approved. ...
 ```
 
 Type `quit` to end the session.
+
+Prefer a browser? The same agent is available as a [Streamlit](https://streamlit.io) chat app:
+
+```bash
+make ui  # or: PYTHONPATH=src streamlit run src/claim_agent/ui.py
+```
+
+This opens a chat page at `http://localhost:8501` with the conversation history, a spinner while the agent thinks, and a **New conversation** button in the sidebar to start over. It has the same prerequisites as the terminal chat (registered model + Ollama serving `gemma4`).
